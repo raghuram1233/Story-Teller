@@ -1,2 +1,14 @@
 TinyStories-valid.txt
 TinyStoriesV2-GPT4-train.txt
+wandb/run-20250119_175749-ti0y6fb4/logs/debug.log
+wandb/run-20250119_175749-ti0y6fb4/logs/debug-internal.log
+wandb/run-20250119_175749-ti0y6fb4/files/wandb-metadata.json
+__pycache__/bpe.cpython-39.pyc
+wandb/run-20250119_175511-wzyefmzd/files/wandb-metadata.json
+wandb/run-20250119_175511-wzyefmzd/files/requirements.txt
+wandb/run-20250119_175511-wzyefmzd/logs/debug.log
+wandb/run-20250119_175749-ti0y6fb4/run-ti0y6fb4.wandb
+wandb/run-20250119_175511-wzyefmzd/logs/debug-internal.log
+wandb
+data
+__pycache__
