@@ -12,3 +12,5 @@ wandb/run-20250119_175511-wzyefmzd/logs/debug-internal.log
 wandb
 data
 __pycache__
+models/tiny_base_lora.pt
+models/tiny_base.pt

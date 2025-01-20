@@ -108,6 +108,7 @@ def inject_lora(module: nn.Module, target_layers: list[str], rank: int, alpha: f
 
         setattr(current_mod, target, lora)
 
+
 # EXAMPLE USAGE:
 # 1. LOAD MODEL
 # test_model.load_state_dict(torch.load('tiny_lm/tiny_lm_weights')['model_state_dict'])

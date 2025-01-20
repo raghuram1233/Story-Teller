@@ -1,6 +1,6 @@
-
 import os.path
 from datetime import datetime
+import time
 
 import lora
 import wandb
@@ -12,6 +12,8 @@ import model
 from transformers import GPT2TokenizerFast
 from torch.utils import data
 import numpy as np
+
+start_time = time.time()
 
 """
 Trains a small language model that can learn to speak englisch with very few parameters 
@@ -34,9 +36,9 @@ def _lazy_file_read(file_obj, chunk_size=1024):
 
 def pre_tokenize_dataset(path, save_path):
     print(f"Running tokenization for {path}")
-    arrays = []
     try:
         with open(path, 'r', encoding='utf-8') as file:
+            arrays = []
             for line in tqdm(_lazy_file_read(file)):
                 tokens = tokenizer(line).data['input_ids']
                 arrays.append(np.array(tokens, dtype=np.int32))
@@ -85,7 +87,7 @@ def eval_model(training_model: torch.nn.Module, val_loader: torch.utils.data.Dat
 
 
 @torch.no_grad()
-def generate_sample_text(training_model= model.TinyLM, max_tokens: int = 200) -> str:
+def generate_sample_text(training_model: model.TinyLM, max_tokens: int = 200) -> str:   #type: ignore
     training_model.eval()
     context = torch.zeros((5, config['BLOCK_SIZE']), dtype=torch.long, device=config['DEVICE'])
     out_tokens = training_model.generate(context, max_new_tokens=max_tokens)
@@ -108,10 +110,9 @@ config = {
     "EVAL_INTERVAL": 1000,
     "EVAL_ITER": 100,
     "LR": 3e-4,
-    "BATCH_SIZE": 32,
+    "BATCH_SIZE": 64,
     "DEVICE": 'cuda' if torch.cuda.is_available() else 'cpu',
     "LOAD_PATH": 'models/tiny_base.pt',
-    "SAVE_PATH": 'models/tiny_base_lora.pt',
     "ENABLE_LORA": True,
 }
 assert config['EMB_SIZE'] % config['N_ATTENTION_HEADS'] == 0
@@ -127,33 +128,30 @@ model = model.to(config['DEVICE'])
 
 lora_enabled_on_base = False
 checkpoint = None
+
+should_inject_lora = config['ENABLE_LORA'] and not lora_enabled_on_base
+if should_inject_lora:
+    lora.inject_lora(model, ["self_attention"], 2, 0.1, config['DEVICE'])
+
+trainable_parameters = [p for p in model.parameters() if p.requires_grad]
+total_params = sum(p.numel() for p in trainable_parameters)
+print(f"\nTotal trainable parameters: {total_params}")
+
+
+optim = torch.optim.Adam(trainable_parameters, lr=config['LR'])
+
+
+loss_fn = torch.nn.CrossEntropyLoss()
+
 # Load pre-trained base model if it exists
 if os.path.exists(config['LOAD_PATH']):
     checkpoint = torch.load(config['LOAD_PATH'], map_location=config['DEVICE'])
     prev_epochs = checkpoint['epoch']
     lora_enabled_on_base = checkpoint['lora_was_enabled']
     model.load_state_dict(checkpoint['model_state_dict'])
-
-
-# INJECT LoRA, if enabled AND not already enabled in the base weights
-# IF lora was in the base weights, there is no need to create the layers again, as they already exist!
-# --> Training will just continue to train the LoRA layers.
-should_inject_lora = config['ENABLE_LORA'] and not lora_enabled_on_base
-if should_inject_lora:
-    lora.inject_lora(model, ["self_attention"], 2, 0.1, config['DEVICE'])
-
-# Get trainable parameters
-trainable_parameters = [p for p in model.parameters() if p.requires_grad]
-total_params = sum(p.numel() for p in trainable_parameters)
-print(f"\nTotal trainable parameters: {total_params}")
-
-# Initialize optimizer
-optim = torch.optim.Adam(trainable_parameters, lr=config['LR'])
-# Load the state of the optimizer only if training is continued with the same structure.
-if checkpoint and not should_inject_lora:
     optim.load_state_dict(checkpoint['optimizer_state_dict'])
 
-loss_fn = torch.nn.CrossEntropyLoss()
+
 
 # DATASET
 # ----------------------------------------------------------------------------------------------------------------------
@@ -186,29 +184,34 @@ text_table = wandb.Table(columns=['epoch', 'loss', 'predicted text'])
 
 try:
     for b_idx, batch in enumerate(train_loader):
+        t0 = time.time()
         # Inference
-        sources, targets = batch
-        logits = model(sources)
-        logits = logits.view(config['BATCH_SIZE'] * config['BLOCK_SIZE'], config['VOCAB_SIZE'])
-        targets = targets.view(config['BATCH_SIZE'] * config['BLOCK_SIZE'])
-        loss = torch.nn.functional.cross_entropy(logits, targets)
-        wandb.log({"loss": loss})
-        # Weight update
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
+        with torch.autocast(device_type=config['DEVICE'],dtype=torch.bfloat16):
+            sources, targets = batch
+            logits = model(sources)
+            logits = logits.view(config['BATCH_SIZE'] * config['BLOCK_SIZE'], config['VOCAB_SIZE'])
+            targets = targets.view(config['BATCH_SIZE'] * config['BLOCK_SIZE'])
+            loss = torch.nn.functional.cross_entropy(logits, targets)
+            wandb.log({"loss": loss})
+            # Weight update
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
 
-        if b_idx % config['EVAL_INTERVAL'] == 0:
+        t1 = time.time()
+
+        print(f"Batch {b_idx} | Time per Batch {t1-t0} | Total Time {t1 - start_time}",end='\r')
+
+
+        if b_idx % config['EVAL_INTERVAL'] == 0 and b_idx > 0:
             val_loss = eval_model(model, val_loader)
-            generated_text = generate_sample_text(model, max_tokens=config['MAX_OUT_TOKENS'])
-            print(generated_text)
             wandb.log({"val_loss": val_loss})
+
+
 except KeyboardInterrupt:
     pass
 finally:
     checkpoint_location = config['LOAD_PATH']
-    if config['SAVE_PATH']:
-        checkpoint_location = config['SAVE_PATH']
 
     print(f"Saving model to {checkpoint_location} and shutting down training...")
     torch.save({'epoch': prev_epochs + b_idx,
