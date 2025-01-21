@@ -234,6 +234,8 @@ class GPTLanguageModel(nn.Module):
             probs = F.softmax(logits, dim=-1) # (B, C)
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
+            if idx_next == 50256:
+                break
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
@@ -257,8 +259,6 @@ def get_lr(step):
 
 model = GPTLanguageModel()
 model = model.to(device)
-# print the number of parameters in the model
-print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -269,5 +269,5 @@ if os.path.exists(config['LOAD_PATH']):
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-context = torch.zeros((1, 1), dtype=torch.long, device=device)
+context = torch.tensor([[50256]], dtype=torch.long, device=device)
 print(tokenizer.decode(model.generate(context, max_new_tokens=500)[0].tolist()))

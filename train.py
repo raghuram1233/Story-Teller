@@ -19,10 +19,10 @@ batch_size = 64 # how many independent sequences will we process in parallel?
 block_size = 128 # what is the maximum context length for predictions?
 vocab_size = len(tokenizer) # how many unique tokens exist in our model's vocab?
 max_iters = 5000
-eval_interval = 500
+eval_interval = 50
 learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-eval_iters = 200
+eval_iters = 50
 n_embd = 768
 n_head = 4
 n_layer = 2
@@ -91,19 +91,22 @@ val_loader = data.DataLoader(val_tiny_stories, batch_size=config['BATCH_SIZE'])
 
 @torch.no_grad()
 def estimate_loss():
+    print("---------------------------------------------------------------")
+    print("Evaluating loss")
     out = {}
     model.eval()
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for iter,batch in enumerate(train_loader):
-            if iter == eval_iters:
-                break
-            X, Y = batch
-            logits, loss = model(X, Y)
-            losses[iter] = loss.item()
-        out[split] = losses.mean().item()
+    losses = torch.zeros(eval_iters)
+    for iter,batch in enumerate(val_loader):
+        if iter == eval_iters:
+            break
+        X, Y = batch
+        logits, loss = model(X, Y)
+        losses[iter] = loss.item()
+        print(f"Batch {iter}")
     model.train()
-    return out
+    print("---------------------------------------------------------------")
+    print("Training done")
+    return losses.mean().item()
 
 class Head(nn.Module):
     """ one head of self-attention """
@@ -240,7 +243,7 @@ class GPTLanguageModel(nn.Module):
 
 max_lr = 3e-4
 min_lr = max_lr *0.1
-warmup_steps = 10
+warmup_steps = 250
 max_steps = 50
 
 def get_lr(step):
@@ -259,13 +262,13 @@ model = GPTLanguageModel()
 model = model.to(device)
 # print the number of parameters in the model
 print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
+print(f"Tokens :{vocab_size}")
 
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 if os.path.exists(config['LOAD_PATH']):
     checkpoint = torch.load(config['LOAD_PATH'], map_location=config['DEVICE'])
-    prev_epochs = checkpoint['epoch']
     lora_enabled_on_base = checkpoint['lora_was_enabled']
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -282,10 +285,10 @@ try:
     for iter,batch in enumerate(train_loader):
         t0 = time.time()
         # every once in a while evaluate the loss on train and val sets
-        if (iter % eval_interval == 0 and iter!=0)or iter == max_iters - 1:
-            losses = estimate_loss()
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-            wandb.log({"val_loss": losses['val']})
+        if (iter % eval_interval == 0)or iter == max_iters - 1:
+            loss_eval = estimate_loss()
+            print(f"step {iter}: val loss {loss_eval:.4f}")
+            wandb.log({"val_loss": loss_eval})
 
         with torch.autocast(device_type=config['DEVICE'],dtype=torch.bfloat16):   
             # sample a batch of data
@@ -308,7 +311,8 @@ try:
             losses = 0
 
         t1 = time.time()
-        print(f"Batch {iter} | Time per Batch {t1-t0}",end='\r')
+        print(f"Batch {iter} | Time per Batch {t1-t0}")
+        torch.cuda.empty_cache()
 
 except KeyboardInterrupt:
     pass
