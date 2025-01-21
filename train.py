@@ -158,7 +158,7 @@ except KeyboardInterrupt:
     pass
 
 finally:
-    checkpoint_location = model.Load_path
+    checkpoint_location = model.load_path
 
     print(f"Saving model to {checkpoint_location} and shutting down training...")
     torch.save({

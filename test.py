@@ -265,7 +265,6 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 if os.path.exists(config['LOAD_PATH']):
     checkpoint = torch.load(config['LOAD_PATH'], map_location=config['DEVICE'])
-    lora_enabled_on_base = checkpoint['lora_was_enabled']
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
