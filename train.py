@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from transformers import GPT2TokenizerFast
 from torch.utils import data
 
+
 from model import GPTLanguageModel
 
 import numpy as np
@@ -25,11 +26,12 @@ class TinyStoriesDataset(data.IterableDataset):
     def __getitem__(self, index):
         pass
 
-    def __init__(self, tokenized_path, block_size: int, device: str = 'cuda'):
+    def __init__(self, tokenized_path, block_size: int, device: str = 'cuda',prev_iters: int = 0):
         # Each line represents a short story
         self.block_size = block_size
         self.device = device
-        self.train = np.load(tokenized_path, mmap_mode='r', allow_pickle=True)
+        self.prev_iters = prev_iters
+        self.train = np.load(tokenized_path, mmap_mode='r', allow_pickle=True)[self.prev_iters:]
 
     def __iter__(self):
         while True:
@@ -45,6 +47,7 @@ class TinyStoriesDataset(data.IterableDataset):
 
 model = GPTLanguageModel()
 model = model.to(device)
+
 # print the number of parameters in the model
 print(sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 print(f"Tokens :{model.vocab_size}")
@@ -52,6 +55,13 @@ print(f"Tokens :{model.vocab_size}")
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=model.learning_rate)
 
+prev_iters = 0
+
+if os.path.exists(model.load_path):
+    checkpoint = torch.load(model.load_path, map_location=model.device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    prev_iters = checkpoint['iter']
 
 # DATASET
 # ----------------------------------------------------------------------------------------------------------------------
@@ -59,15 +69,17 @@ TINY_STORY_TRAIN = 'data/TinyStories-train.txt'
 TINY_TOKENIZED = 'data/tiny_tokenized.npy'
 
 
-train_tiny_stories = TinyStoriesDataset(TINY_TOKENIZED, model.block_size, device=model.device)
+train_tiny_stories = TinyStoriesDataset(TINY_TOKENIZED, model.block_size, device=model.device,prev_iters=prev_iters)
 train_loader = data.DataLoader(train_tiny_stories, batch_size=model.batch_size)
 # ----------------------------------------------------------------------------------------------------------------------
 TINY_STORY_VAL = 'data/TinyStories-valid.txt'
 TINY_TOKENIZED_VAL = 'data/tiny_tokenized_val.npy'
 
 
-val_tiny_stories = TinyStoriesDataset(TINY_TOKENIZED_VAL, model.block_size, device=model.device)
+val_tiny_stories = TinyStoriesDataset(TINY_TOKENIZED_VAL, model.block_size, device=model.device,prev_iters= prev_iters)
 val_loader = data.DataLoader(val_tiny_stories, batch_size=model.batch_size)
+
+
 
 @torch.no_grad()
 def estimate_loss():
@@ -107,13 +119,6 @@ def get_lr(step):
 
 
 
-
-
-if os.path.exists(model.load_path):
-    checkpoint = torch.load(model.load_path, map_location=model.device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
 wandb.init(
     project='TinyLM'
 )
@@ -123,6 +128,7 @@ losses=0
 
 try:
     for iter,batch in enumerate(train_loader):
+        
         t0 = time.time()
         # every once in a while evaluate the loss on train and val sets
         if (iter % model.eval_interval == 0)or iter == model.max_iters - 1:
@@ -163,5 +169,6 @@ finally:
     print(f"Saving model to {checkpoint_location} and shutting down training...")
     torch.save({
                 'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict()
+                'optimizer_state_dict': optimizer.state_dict(),
+                'iter': iter,
                 }, checkpoint_location)

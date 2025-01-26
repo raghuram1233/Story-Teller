@@ -1,8 +1,11 @@
 import torch
+import torch.distributed
 import torch.nn as nn
 from torch.nn import functional as F
 from transformers import GPT2TokenizerFast
 from torch.utils import data
+
+
 
 import numpy as np
 import math
@@ -24,16 +27,16 @@ learning_rate = 3e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 n_embd = 768
-n_head = 4
-n_layer = 2
+n_head = 12
+n_layer = 12
 dropout = 0.2
 # ------------
 
 config = {
     "BLOCK_SIZE": 128,
     "EMB_SIZE": 768,
-    "N_ATTENTION_HEADS": 4,
-    "N_DECODER_BLOCKS": 2,
+    "N_ATTENTION_HEADS":12,
+    "N_DECODER_BLOCKS": 12,
     "VOCAB_SIZE": len(tokenizer),
     "MAX_OUT_TOKENS": 200,
     "EVAL_INTERVAL": 1000,
@@ -41,11 +44,9 @@ config = {
     "LR": 3e-4,
     "BATCH_SIZE": 64,
     "DEVICE": 'cuda' if torch.cuda.is_available() else 'cpu',
-    "LOAD_PATH": 'models/tiny_base.pt',
+    "LOAD_PATH": 'models/base_model_2.pt',
     "ENABLE_LORA": True,
 }
-
-torch.manual_seed(1337)
 
 
 class TinyStoriesDataset(data.IterableDataset):
@@ -162,7 +163,7 @@ class FeedFoward(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class Block(nn.Module):
+class Block(nn.Module):         
     """ Transformer block: communication followed by computation """
 
     def __init__(self, n_embd, n_head):
@@ -172,7 +173,7 @@ class Block(nn.Module):
         self.sa = MultiHeadAttention(n_head, head_size)
         self.ffwd = FeedFoward(n_embd)
         self.ln1 = nn.LayerNorm(n_embd)
-        self.ln2 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd) 
 
     def forward(self, x):
         x = x + self.sa(self.ln1(x))
