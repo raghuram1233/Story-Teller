@@ -44,7 +44,7 @@ config = {
     "LR": 3e-4,
     "BATCH_SIZE": 64,
     "DEVICE": 'cuda' if torch.cuda.is_available() else 'cpu',
-    "LOAD_PATH": 'models/base_model_2.pt',
+    "LOAD_PATH": 'models/base_model.pt',
     "ENABLE_LORA": True,
 }
 
