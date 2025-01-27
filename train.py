@@ -129,6 +129,15 @@ losses=0
 try:
     for iter,batch in enumerate(train_loader):
         
+        if((iter+prev_iters)%1000==0):
+            checkpoint_location = model.load_path
+            print(f"Saving model to {checkpoint_location} and shutting down training...")
+            torch.save({
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'iter': iter + prev_iters,
+                        }, checkpoint_location) 
+
         t0 = time.time()
         # every once in a while evaluate the loss on train and val sets
         if (iter % model.eval_interval == 0)or iter == model.max_iters - 1:
@@ -170,5 +179,5 @@ finally:
     torch.save({
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'iter': iter,
+                'iter': iter + prev_iters,
                 }, checkpoint_location)
