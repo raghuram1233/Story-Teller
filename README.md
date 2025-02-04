@@ -1,6 +1,6 @@
 # TinyStories Language Model
 
-This project trains a small language model that can learn to speak English with very few parameters using the TinyStories Dataset.
+This project trains a language learning model based on transformer architecture that can learn to speak English with very 182M parameters using the TinyStories Dataset.
 
 
 ## Setup
